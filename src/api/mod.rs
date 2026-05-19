@@ -131,24 +131,24 @@ async fn list_agents(
         Err(e) => return Json(ApiResponse::error(e.to_string())),
     };
 
-    let items: Vec<AgentListItem> = agents
-        .into_iter()
-        .map(|m| {
-            let status = tokio::runtime::Handle::current()
-                .block_on(state.process.get_state(&m.slug))
-                .map(|s| s.status)
-                .unwrap_or(ProcessStatus::Stopped);
-            AgentListItem {
-                slug: m.slug,
-                display_name: m.display_name,
-                description: m.description,
-                port: m.port,
-                status,
-                enabled: m.enabled,
-                auto_start: m.auto_start,
-            }
-        })
-        .collect();
+    let mut items = Vec::new();
+    let running = state.process.all_states().await;
+    for m in agents {
+        let status = running
+            .iter()
+            .find(|s| s.slug == m.slug)
+            .map(|s| s.status.clone())
+            .unwrap_or(ProcessStatus::Stopped);
+        items.push(AgentListItem {
+            slug: m.slug,
+            display_name: m.display_name,
+            description: m.description,
+            port: m.port,
+            status,
+            enabled: m.enabled,
+            auto_start: m.auto_start,
+        });
+    }
 
     Json(ApiResponse::success(items))
 }
@@ -280,6 +280,13 @@ async fn start_agent(
     State(state): State<Arc<AppState>>,
     Path(slug): Path<String>,
 ) -> Json<ApiResponse<serde_json::Value>> {
+    // When starting from the dashboard, enable auto_start
+    if let Ok(mut meta) = state.config.load_meta(&slug) {
+        if !meta.auto_start {
+            meta.auto_start = true;
+            let _ = state.config.save_meta(&meta);
+        }
+    }
     match state.process.start_agent(&slug).await {
         Ok(agent) => Json(ApiResponse::success(serde_json::json!({
             "slug": agent.slug,

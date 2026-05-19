@@ -1,10 +1,16 @@
-const API = "http://localhost:9090";
+const API = "";
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API}${path}`);
-  const json = await res.json();
-  if (!json.ok) throw new Error(json.error);
-  return json.data as T;
+  const text = await res.text();
+  try {
+    const json = JSON.parse(text);
+    if (!json.ok) throw new Error(json.error || "Unknown error");
+    return json.data as T;
+  } catch (e) {
+    if (e instanceof SyntaxError) throw new Error(`Invalid response: ${text.slice(0, 200)}`);
+    throw e;
+  }
 }
 
 async function post<T>(path: string, body?: any): Promise<T> {
@@ -13,9 +19,15 @@ async function post<T>(path: string, body?: any): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
-  const json = await res.json();
-  if (!json.ok) throw new Error(json.error);
-  return json.data as T;
+  const text = await res.text();
+  try {
+    const json = JSON.parse(text);
+    if (!json.ok) throw new Error(json.error || "Unknown error");
+    return json.data as T;
+  } catch (e) {
+    if (e instanceof SyntaxError) throw new Error(`Invalid response (${res.status}): ${text.slice(0, 200)}`);
+    throw e;
+  }
 }
 
 async function put<T>(path: string, body?: any): Promise<T> {
@@ -24,15 +36,28 @@ async function put<T>(path: string, body?: any): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
-  const json = await res.json();
-  if (!json.ok) throw new Error(json.error);
-  return json.data as T;
+  const text = await res.text();
+  try {
+    const json = JSON.parse(text);
+    if (!json.ok) throw new Error(json.error || "Unknown error");
+    return json.data as T;
+  } catch (e) {
+    if (e instanceof SyntaxError) throw new Error(`Invalid response (${res.status}): ${text.slice(0, 200)}`);
+    throw e;
+  }
 }
 
 async function del(path: string): Promise<void> {
   const res = await fetch(`${API}${path}`, { method: "DELETE" });
-  const json = await res.json();
-  if (!json.ok) throw new Error(json.error);
+  const text = await res.text();
+  if (!text) return; // empty response OK for DELETE
+  try {
+    const json = JSON.parse(text);
+    if (!json.ok) throw new Error(json.error || "Unknown error");
+  } catch (e) {
+    if (e instanceof SyntaxError) throw new Error(`Invalid response (${res.status}): ${text.slice(0, 200)}`);
+    throw e;
+  }
 }
 
 export interface AgentListItem {
