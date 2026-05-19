@@ -148,8 +148,26 @@ async fn bootstrap_microclaw(version: Option<String>) -> anyhow::Result<()> {
 
     let version = version.unwrap_or_else(|| "latest".to_string());
     let tag = if version == "latest" {
-        let resp = reqwest::get("https://api.github.com/repos/HaraldeRoessler/ownify-microclaw/releases/latest").await?;
-        let json: serde_json::Value = resp.json().await?;
+        let client = reqwest::Client::new();
+        let resp = client
+            .get("https://api.github.com/repos/HaraldeRoessler/ownify-microclaw/releases/latest")
+            .header("User-Agent", "ownify-desk")
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .await?;
+
+        let status = resp.status();
+        let text = resp.text().await?;
+
+        if !status.is_success() {
+            anyhow::bail!(
+                "GitHub API returned {}: {}",
+                status,
+                &text[..text.len().min(200)]
+            );
+        }
+
+        let json: serde_json::Value = serde_json::from_str(&text)?;
         json["tag_name"].as_str().unwrap_or("v0.1.52").to_string()
     } else {
         format!("v{}", version)
