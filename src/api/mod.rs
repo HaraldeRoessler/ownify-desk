@@ -22,7 +22,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    Router::new()
+    let api = Router::new()
         // Agent lifecycle
         .route("/api/agents/:slug/start", post(start_agent))
         .route("/api/agents/:slug/stop", post(stop_agent))
@@ -42,7 +42,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/dashboard", get(get_dashboard))
         .route("/api/status", get(get_status))
         .layer(cors)
-        .with_state(state)
+        .with_state(state);
+
+    // Serve static web UI files (everything outside /api)
+    api.fallback_service(tower_http::services::ServeDir::new("web/dist"))
 }
 
 // ---------- Types ----------
