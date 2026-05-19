@@ -47,7 +47,9 @@ impl ProcessManager {
     }
 
     pub async fn start_agent(&self, slug: &str) -> Result<AgentState> {
+        tracing::info!("start_agent: loading meta for '{}'", slug);
         let meta = self.config.load_meta(slug)?;
+        tracing::info!("start_agent: meta loaded, enabled={} auto_start={}", meta.enabled, meta.auto_start);
         if !meta.enabled {
             anyhow::bail!("Agent '{}' is disabled", slug);
         }
@@ -58,15 +60,16 @@ impl ProcessManager {
 
         self.config.ensure_agent_dirs(slug)?;
 
+        tracing::info!("start_agent: preparing config for '{}'", slug);
         // Inject the correct web_port into the config
         let config_content = self.config.load_microclaw_config(slug)?;
         let config_content = inject_port(&config_content, meta.port);
         self.config.save_microclaw_config(slug, &config_content)?;
 
+        tracing::info!("start_agent: spawning '{}' binary={} config={}", slug, self.microclaw_binary, config_path.display());
         let mut cmd = Command::new(&self.microclaw_binary);
         cmd.arg("start")
-            .arg("--config")
-            .arg(&config_path)
+            .env("MICROCLAW_CONFIG", config_path.to_str().unwrap_or_default())
             .current_dir(&agent_dir);
 
         if let Ok(log_file) = std::fs::File::create(&log_file) {
