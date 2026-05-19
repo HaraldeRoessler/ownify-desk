@@ -107,6 +107,7 @@ async fn main() -> anyhow::Result<()> {
             let state = Arc::new(api::AppState {
                 config: config_manager,
                 process: process_manager,
+                agent_cookies: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             });
 
             let app = api::router(state);

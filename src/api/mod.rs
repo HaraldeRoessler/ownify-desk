@@ -8,13 +8,18 @@ use axum::{
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
 
 pub struct AppState {
     pub config: Arc<ConfigManager>,
     pub process: Arc<ProcessManager>,
+    pub agent_cookies: Arc<Mutex<HashMap<String, String>>>, // session cookies per slug
 }
+
+pub mod proxy;
 
 pub fn router(state: Arc<AppState>) -> Router {
     let cors = CorsLayer::new()
@@ -41,6 +46,20 @@ pub fn router(state: Arc<AppState>) -> Router {
         // Dashboard
         .route("/api/dashboard", get(get_dashboard))
         .route("/api/status", get(get_status))
+        // Proxy routes to running microclaw agents
+        .route("/api/proxy/:slug/health", get(proxy::proxy_health))
+        .route("/api/proxy/:slug/config", get(proxy::proxy_get_config))
+        .route("/api/proxy/:slug/config/self_check", get(proxy::proxy_config_self_check))
+        .route("/api/proxy/:slug/sessions", get(proxy::proxy_sessions))
+        .route("/api/proxy/:slug/history", get(proxy::proxy_history))
+        .route("/api/proxy/:slug/audit", get(proxy::proxy_audit))
+        .route("/api/proxy/:slug/usage", get(proxy::proxy_usage))
+        .route("/api/proxy/:slug/skills", get(proxy::proxy_skills))
+        .route("/api/proxy/:slug/metrics", get(proxy::proxy_metrics))
+        .route("/api/proxy/:slug/metrics/history", get(proxy::proxy_metrics_history))
+        .route("/api/proxy/:slug/memory_observability", get(proxy::proxy_memory_observability))
+        .route("/api/proxy/:slug/auth/status", get(proxy::proxy_auth_status))
+        .route("/api/proxy/:slug/a2a/agent_card", get(proxy::proxy_a2a_agent_card))
         .layer(cors)
         .with_state(state);
 

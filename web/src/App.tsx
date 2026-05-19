@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
 import { api, AgentListItem, DashboardData } from "./api";
+import { AgentDetailPage } from "./pages/agent-detail";
+
+type View = { type: "list" } | { type: "detail"; slug: string };
 
 export default function App() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [view, setView] = useState<View>({ type: "list" });
 
   const load = () => api.getDashboard().then(setDashboard).catch(e => setError(e.message));
 
@@ -19,12 +23,13 @@ export default function App() {
       await api.createAgent({ slug, display_name: name });
       setShowCreate(false);
       load();
+      setView({ type: "detail", slug });
     } catch (e: any) { setError(e.message); }
   };
 
   const onDelete = async (slug: string) => {
     if (!confirm(`Delete agent "${slug}" and all its data?`)) return;
-    try { await api.deleteAgent(slug); load(); } catch (e: any) { setError(e.message); }
+    try { await api.deleteAgent(slug); load(); setView({ type: "list" }); } catch (e: any) { setError(e.message); }
   };
 
   const onToggle = async (a: AgentListItem) => {
@@ -34,6 +39,14 @@ export default function App() {
       load();
     } catch (e: any) { setError(e.message); }
   };
+
+  if (view.type === "detail") {
+    return <AgentDetailPage
+      slug={view.slug}
+      onBack={() => setView({ type: "list" })}
+      onRefresh={() => { load(); }}
+    />;
+  }
 
   return (
     <div className="container">
@@ -88,7 +101,7 @@ export default function App() {
       ) : (
         <div className="grid">
           {dashboard?.agents.map(a => (
-            <AgentCard key={a.slug} agent={a} onToggle={onToggle} onDelete={onDelete} />
+            <AgentCard key={a.slug} agent={a} onToggle={onToggle} onDelete={onDelete} onClick={() => setView({ type: "detail", slug: a.slug })} />
           ))}
         </div>
       )}
@@ -96,17 +109,22 @@ export default function App() {
   );
 }
 
-function AgentCard({ agent, onToggle, onDelete }: { agent: AgentListItem; onToggle: (a: AgentListItem) => void; onDelete: (slug: string) => void }) {
+function AgentCard({ agent, onToggle, onDelete, onClick }: {
+  agent: AgentListItem;
+  onToggle: (a: AgentListItem) => void;
+  onDelete: (slug: string) => void;
+  onClick: () => void;
+}) {
   const statusClass = agent.status === "running" ? "badge-running" : agent.status === "starting" ? "badge-starting" : "badge-stopped";
   return (
-    <div className="card">
+    <div className="card clickable" onClick={onClick}>
       <div className="card-header">
         <span className="card-title">{agent.display_name}</span>
         <span className={`badge ${statusClass}`}>{agent.status}</span>
       </div>
       <div className="card-meta" style={{marginBottom:8}}>Slug: {agent.slug} · Port: {agent.port}</div>
       {agent.description && <p style={{fontSize:13,color:"#8b949e",marginBottom:12}}>{agent.description}</p>}
-      <div style={{display:"flex",gap:8}}>
+      <div style={{display:"flex",gap:8}} onClick={e => e.stopPropagation()}>
         <button className={`btn btn-sm ${agent.status === "running" ? "btn-danger" : "btn-primary"}`} onClick={() => onToggle(agent)}>
           {agent.status === "running" ? "Stop" : "Start"}
         </button>

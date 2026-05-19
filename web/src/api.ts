@@ -1,103 +1,56 @@
+// ---------- API helpers ----------
 const API = "";
-
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API}${path}`);
-  const text = await res.text();
-  try {
-    const json = JSON.parse(text);
-    if (!json.ok) throw new Error(json.error || "Unknown error");
-    return json.data as T;
-  } catch (e) {
-    if (e instanceof SyntaxError) throw new Error(`Invalid response: ${text.slice(0, 200)}`);
-    throw e;
-  }
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || "Unknown error");
+  return json.data as T;
 }
-
 async function post<T>(path: string, body?: any): Promise<T> {
   const res = await fetch(`${API}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
-  const text = await res.text();
-  try {
-    const json = JSON.parse(text);
-    if (!json.ok) throw new Error(json.error || "Unknown error");
-    return json.data as T;
-  } catch (e) {
-    if (e instanceof SyntaxError) throw new Error(`Invalid response (${res.status}): ${text.slice(0, 200)}`);
-    throw e;
-  }
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || "Unknown error");
+  return json.data as T;
 }
-
 async function put<T>(path: string, body?: any): Promise<T> {
   const res = await fetch(`${API}${path}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    method: "PUT", headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
-  const text = await res.text();
-  try {
-    const json = JSON.parse(text);
-    if (!json.ok) throw new Error(json.error || "Unknown error");
-    return json.data as T;
-  } catch (e) {
-    if (e instanceof SyntaxError) throw new Error(`Invalid response (${res.status}): ${text.slice(0, 200)}`);
-    throw e;
-  }
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || "Unknown error");
+  return json.data as T;
 }
-
 async function del(path: string): Promise<void> {
   const res = await fetch(`${API}${path}`, { method: "DELETE" });
   const text = await res.text();
-  if (!text) return; // empty response OK for DELETE
-  try {
-    const json = JSON.parse(text);
-    if (!json.ok) throw new Error(json.error || "Unknown error");
-  } catch (e) {
-    if (e instanceof SyntaxError) throw new Error(`Invalid response (${res.status}): ${text.slice(0, 200)}`);
-    throw e;
-  }
+  if (!text) return;
+  const json = JSON.parse(text);
+  if (!json.ok) throw new Error(json.error || "Unknown error");
 }
 
+// ---------- Types ----------
 export interface AgentListItem {
-  slug: string;
-  display_name: string;
-  description: string;
-  port: number;
-  status: "running" | "stopped" | "crashed" | "starting";
-  enabled: boolean;
-  auto_start: boolean;
+  slug: string; display_name: string; description: string; port: number;
+  status: "running" | "stopped" | "crashed" | "starting"; enabled: boolean; auto_start: boolean;
 }
-
 export interface AgentDetail {
-  meta: {
-    slug: string;
-    display_name: string;
-    description: string;
-    port: number;
-    auto_start: boolean;
-    enabled: boolean;
-    created_at: string;
-    updated_at: string;
-  };
-  status: "running" | "stopped" | "crashed" | "starting";
-  pid: number | null;
+  meta: { slug: string; display_name: string; description: string; port: number; auto_start: boolean; enabled: boolean; created_at: string; updated_at: string; };
+  status: "running" | "stopped" | "crashed" | "starting"; pid: number | null;
 }
+export interface DashboardData { agents: AgentListItem[]; total: number; running: number; stopped: number; }
+export interface StatusData { version: string; binary: string | null; dashboard_url: string; agents: number; running: number; }
 
-export interface DashboardData {
-  agents: AgentListItem[];
-  total: number;
-  running: number;
-  stopped: number;
-}
-
-export interface StatusData {
-  version: string;
-  binary: string | null;
-  dashboard_url: string;
-  agents: number;
-  running: number;
+// Helper for safe proxy fetching (agent might be offline)
+async function proxyGet<T>(slug: string, endpoint: string): Promise<T | null> {
+  try {
+    return await get<T>(`/api/proxy/${slug}/${endpoint}`);
+  } catch {
+    return null;
+  }
 }
 
 export const api = {
@@ -115,4 +68,21 @@ export const api = {
   getLogs: (slug: string) => get<{ slug: string; lines: string }>(`/api/agents/${slug}/logs`),
   getDashboard: () => get<DashboardData>("/api/dashboard"),
   getStatus: () => get<StatusData>("/api/status"),
+
+  // ---------- Proxy endpoints (read from running agent) ----------
+  proxy: {
+    health: (slug: string) => proxyGet<any>(slug, "health"),
+    config: (slug: string) => proxyGet<{slug:string;port:number;content:string}>(slug, "config"),
+    configSelfCheck: (slug: string) => proxyGet<any>(slug, "config/self_check"),
+    sessions: (slug: string) => proxyGet<any[]>(slug, "sessions"),
+    history: (slug: string) => proxyGet<any[]>(slug, "history"),
+    audit: (slug: string) => proxyGet<any[]>(slug, "audit"),
+    usage: (slug: string) => proxyGet<any>(slug, "usage"),
+    skills: (slug: string) => proxyGet<any[]>(slug, "skills"),
+    metrics: (slug: string) => proxyGet<any>(slug, "metrics"),
+    metricsHistory: (slug: string) => proxyGet<any[]>(slug, "metrics/history"),
+    memoryObservability: (slug: string) => proxyGet<any>(slug, "memory_observability"),
+    authStatus: (slug: string) => proxyGet<any>(slug, "auth/status"),
+    a2aAgentCard: (slug: string) => proxyGet<any>(slug, "a2a/agent_card"),
+  },
 };

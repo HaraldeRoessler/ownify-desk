@@ -47,3 +47,31 @@ textarea.form-input{font-family:monospace;min-height:400px;line-height:1.5}
 .empty-state p{margin-bottom:24px}
 .spinner{display:inline-block;width:16px;height:16px;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:spin .6s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* Tab bar */
+.tab-bar{display:flex;gap:2px;margin-bottom:16px;flex-wrap:wrap;background:#161b22;border:1px solid #21262d;border-radius:8px;padding:4px}
+.tab-btn{padding:8px 14px;border:none;background:transparent;color:#8b949e;font-size:13px;cursor:pointer;border-radius:6px;transition:all .15s;white-space:nowrap}
+.tab-btn:hover{color:#f0f6fc;background:#21262d}
+.tab-active{color:#f0f6fc!important;background:#1f6feb!important}
+.tab-content{min-height:200px}
+
+/* Overview grid */
+.overview-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.overview-item{display:flex;flex-direction:column;gap:4px}
+.overview-label{font-size:12px;color:#8b949e}
+
+/* Data table */
+.data-table{width:100%;border-collapse:collapse;font-size:13px}
+.data-table th{padding:8px 12px;text-align:left;font-weight:600;color:#8b949e;border-bottom:1px solid #21262d;font-size:12px}
+.data-table td{padding:8px 12px;border-bottom:1px solid #21262d;color:#c9d1d9}
+.data-table tr:hover td{background:#1c2128}
+.data-table code{font-size:12px;color:#58a6ff}
+
+/* Code block */
+.code-block{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;font-size:12px;line-height:1.5;overflow-x:auto;max-height:400px;overflow-y:auto}
+.code-editor{width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-family:monospace;font-size:12px;line-height:1.5;padding:12px;tab-size:2;resize:vertical}
+.code-editor:focus{outline:none;border-color:#58a6ff}
+
+/* Clickable card */
+.card.clickable{cursor:pointer;transition:border-color .15s}
+.card.clickable:hover{border-color:#30363d}
