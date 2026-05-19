@@ -27,6 +27,13 @@ enum Commands {
         microclaw_binary: Option<String>,
     },
 
+    /// Auto-install the microclaw agent binary from GitHub releases
+    Bootstrap {
+        /// Specific version to install (default: latest)
+        #[arg(long)]
+        version: Option<String>,
+    },
+
     /// Show status of all agents
     Status,
 
@@ -54,6 +61,10 @@ async fn main() -> anyhow::Result<()> {
         Commands::Init => {
             config_manager.ensure_dirs()?;
             tracing::info!("Initialized ownify-desk at {}", desk_dir.display());
+            Ok(())
+        }
+        Commands::Bootstrap { version } => {
+            bootstrap_microclaw(version).await?;
             Ok(())
         }
         Commands::Status => {
@@ -109,4 +120,84 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
     }
+}
+
+async fn bootstrap_microclaw(version: Option<String>) -> anyhow::Result<()> {
+    let install_dir = dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".local")
+        .join("bin");
+    std::fs::create_dir_all(&install_dir)?;
+
+    let target_path = install_dir.join("microclaw");
+
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+
+    let platform = match os {
+        "macos" => "apple-darwin",
+        "linux" => "unknown-linux-gnu",
+        _ => anyhow::bail!("Unsupported OS: {}. ownify-desk runs on macOS and Linux.", os),
+    };
+
+    let arch_name = match arch {
+        "aarch64" => "aarch64",
+        "x86_64" => "x86_64",
+        _ => anyhow::bail!("Unsupported architecture: {}", arch),
+    };
+
+    let version = version.unwrap_or_else(|| "latest".to_string());
+    let tag = if version == "latest" {
+        let resp = reqwest::get("https://api.github.com/repos/HaraldeRoessler/ownify-microclaw/releases/latest").await?;
+        let json: serde_json::Value = resp.json().await?;
+        json["tag_name"].as_str().unwrap_or("v0.1.52").to_string()
+    } else {
+        format!("v{}", version)
+    };
+
+    let asset = format!(
+        "microclaw-{}-{}-{}.tar.gz",
+        tag, arch_name, platform
+    );
+    let url = format!(
+        "https://github.com/HaraldeRoessler/ownify-microclaw/releases/download/{}/{}",
+        tag, asset
+    );
+
+    tracing::info!("Downloading microclaw {} from {}", tag, url);
+    
+    let response = reqwest::get(&url).await?;
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "Could not download {}\n\nNo prebuilt binary for {}/{}.\n\
+             Build from source:\n  git clone https://github.com/HaraldeRoessler/ownify-microclaw.git\n  \
+             cd ownify-microclaw && cargo build --release\n  \
+             cp target/release/microclaw {}",
+            asset, os, arch, target_path.display()
+        );
+    }
+
+    let bytes = response.bytes().await?;
+    let cursor = std::io::Cursor::new(bytes);
+    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(cursor));
+    archive.unpack(&install_dir)?;
+
+    // Make executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&target_path)?.permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&target_path, perms)?;
+    }
+
+    tracing::info!("✓ microclaw {} installed to {}", tag, target_path.display());
+    tracing::info!("");
+    tracing::info!("Make sure {} is in your PATH:", install_dir.display());
+    tracing::info!("  export PATH=\"{}:$PATH\"", install_dir.display());
+    tracing::info!("");
+    tracing::info!("Now start the dashboard:");
+    tracing::info!("  ownify-desk start");
+
+    Ok(())
 }
