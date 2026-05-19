@@ -23,29 +23,24 @@ pub fn router(state: Arc<AppState>) -> Router {
         .allow_headers(Any);
 
     Router::new()
+        // Agent lifecycle
+        .route("/api/agents/:slug/start", post(start_agent))
+        .route("/api/agents/:slug/stop", post(stop_agent))
+        .route("/api/agents/:slug/restart", post(restart_agent))
+        // Agent config
+        .route("/api/agents/:slug/config", get(get_config))
+        .route("/api/agents/:slug/config", put(save_config))
+        // Agent logs
+        .route("/api/agents/:slug/logs", get(get_logs))
         // Agent CRUD
         .route("/api/agents", get(list_agents))
         .route("/api/agents", post(create_agent))
-        .route("/api/agents/{slug}", get(get_agent))
-        .route("/api/agents/{slug}", put(update_agent))
-        .route("/api/agents/{slug}", delete(delete_agent))
-        // Agent lifecycle
-        .route("/api/agents/{slug}/start", post(start_agent))
-        .route("/api/agents/{slug}/stop", post(stop_agent))
-        .route("/api/agents/{slug}/restart", post(restart_agent))
-        // Agent config
-        .route("/api/agents/{slug}/config", get(get_config))
-        .route("/api/agents/{slug}/config", put(save_config))
-        // Agent logs
-        .route("/api/agents/{slug}/logs", get(get_logs))
+        .route("/api/agents/:slug", get(get_agent))
+        .route("/api/agents/:slug", put(update_agent))
+        .route("/api/agents/:slug", delete(delete_agent))
         // Dashboard
         .route("/api/dashboard", get(get_dashboard))
         .route("/api/status", get(get_status))
-        // Static files (Web UI)
-        .fallback_service(
-            tower_http::services::ServeDir::new("web/dist")
-                .fallback(tower_http::services::ServeDir::new("web/public")),
-        )
         .layer(cors)
         .with_state(state)
 }
@@ -265,13 +260,18 @@ async fn delete_agent(
     State(state): State<Arc<AppState>>,
     Path(slug): Path<String>,
 ) -> Json<ApiResponse<String>> {
-    // Stop if running
-    let _ = state.process.stop_agent(&slug).await;
+    let process = state.process.clone();
+    let config = state.config.clone();
+    let slug_owned = slug.clone();
 
-    match state.config.delete_agent(&slug) {
-        Ok(()) => Json(ApiResponse::success(format!("Agent '{}' deleted", slug))),
-        Err(e) => Json(ApiResponse::error(e.to_string())),
-    }
+    // Stop + delete in background
+    tokio::spawn(async move {
+        let _ = process.stop_agent(&slug_owned).await;
+        let _ = config.delete_agent(&slug_owned);
+        tracing::info!("Agent '{}' deleted", slug_owned);
+    });
+
+    Json(ApiResponse::success(format!("Agent '{}' deleting", slug)))
 }
 
 // ---------- Agent Lifecycle ----------
@@ -280,51 +280,66 @@ async fn start_agent(
     State(state): State<Arc<AppState>>,
     Path(slug): Path<String>,
 ) -> Json<ApiResponse<serde_json::Value>> {
-    // When starting from the dashboard, enable auto_start
+    // If the meta has auto_start disabled, enable it
     if let Ok(mut meta) = state.config.load_meta(&slug) {
         if !meta.auto_start {
             meta.auto_start = true;
             let _ = state.config.save_meta(&meta);
         }
     }
-    match state.process.start_agent(&slug).await {
-        Ok(agent) => Json(ApiResponse::success(serde_json::json!({
-            "slug": agent.slug,
-            "status": "running",
-            "port": agent.port,
-            "pid": agent.pid,
-        }))),
-        Err(e) => Json(ApiResponse::error(e.to_string())),
-    }
+
+    let process = state.process.clone();
+    let slug_owned = slug.clone();
+
+    // Spawn on a separate task so the HTTP handler returns immediately
+    tokio::spawn(async move {
+        match process.start_agent(&slug_owned).await {
+            Ok(_) => tracing::info!("Agent '{}' started", slug_owned),
+            Err(e) => tracing::error!("Failed to start agent '{}': {}", slug_owned, e),
+        }
+    });
+
+    Json(ApiResponse::success(serde_json::json!({
+        "slug": slug,
+        "status": "starting",
+    })))
 }
 
 async fn stop_agent(
     State(state): State<Arc<AppState>>,
     Path(slug): Path<String>,
 ) -> Json<ApiResponse<serde_json::Value>> {
-    match state.process.stop_agent(&slug).await {
-        Ok(agent) => Json(ApiResponse::success(serde_json::json!({
-            "slug": agent.slug,
-            "status": "stopped",
-        }))),
-        Err(e) => Json(ApiResponse::error(e.to_string())),
-    }
+    let process = state.process.clone();
+    let slug_owned = slug.clone();
+    tokio::spawn(async move {
+        match process.stop_agent(&slug_owned).await {
+            Ok(_) => tracing::info!("Agent '{}' stopped", slug_owned),
+            Err(e) => tracing::error!("Failed to stop '{}': {}", slug_owned, e),
+        }
+    });
+    Json(ApiResponse::success(serde_json::json!({
+        "slug": slug,
+        "status": "stopping",
+    })))
 }
 
 async fn restart_agent(
     State(state): State<Arc<AppState>>,
     Path(slug): Path<String>,
 ) -> Json<ApiResponse<serde_json::Value>> {
-    let _ = state.process.stop_agent(&slug).await;
-    match state.process.start_agent(&slug).await {
-        Ok(agent) => Json(ApiResponse::success(serde_json::json!({
-            "slug": agent.slug,
-            "status": "running",
-            "port": agent.port,
-            "pid": agent.pid,
-        }))),
-        Err(e) => Json(ApiResponse::error(e.to_string())),
-    }
+    let process = state.process.clone();
+    let slug_owned = slug.clone();
+    tokio::spawn(async move {
+        let _ = process.stop_agent(&slug_owned).await;
+        match process.start_agent(&slug_owned).await {
+            Ok(_) => tracing::info!("Agent '{}' restarted", slug_owned),
+            Err(e) => tracing::error!("Failed to restart '{}': {}", slug_owned, e),
+        }
+    });
+    Json(ApiResponse::success(serde_json::json!({
+        "slug": slug,
+        "status": "restarting",
+    })))
 }
 
 // ---------- Config ----------

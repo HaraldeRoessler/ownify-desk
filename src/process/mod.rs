@@ -47,48 +47,34 @@ impl ProcessManager {
     }
 
     pub async fn start_agent(&self, slug: &str) -> Result<AgentState> {
-        tracing::info!("start_agent: loading meta for '{}'", slug);
         let meta = self.config.load_meta(slug)?;
-        tracing::info!("start_agent: meta loaded, enabled={} auto_start={}", meta.enabled, meta.auto_start);
         if !meta.enabled {
             anyhow::bail!("Agent '{}' is disabled", slug);
         }
 
         let agent_dir = self.config.agent_dir(slug);
         let config_path = self.config.agent_config_path(slug);
-        let log_file = self.config.agent_logs_dir(slug).join("microclaw.log");
 
         self.config.ensure_agent_dirs(slug)?;
 
-        tracing::info!("start_agent: preparing config for '{}'", slug);
         // Inject the correct web_port into the config
         let config_content = self.config.load_microclaw_config(slug)?;
         let config_content = inject_port(&config_content, meta.port);
         self.config.save_microclaw_config(slug, &config_content)?;
 
-        tracing::info!("start_agent: spawning '{}' binary={} config={}", slug, self.microclaw_binary, config_path.display());
-        let mut cmd = Command::new(&self.microclaw_binary);
-        cmd.arg("start")
+        // Spawn microclaw — use MICROCLAW_CONFIG env var (not --config flag)
+        let child = Command::new(&self.microclaw_binary)
+            .arg("start")
             .env("MICROCLAW_CONFIG", config_path.to_str().unwrap_or_default())
-            .current_dir(&agent_dir);
-
-        if let Ok(log_file) = std::fs::File::create(&log_file) {
-            let log_clone = log_file.try_clone()?;
-            cmd.stdout(log_file).stderr(log_clone);
-        } else {
-            cmd.stdout(Stdio::null()).stderr(Stdio::null());
-        }
-
-        let child = cmd.spawn().with_context(|| {
-            format!("Failed to start microclaw for agent '{}'", slug)
-        })?;
+            .current_dir(&agent_dir)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .with_context(|| format!("Failed to start microclaw for agent '{}'", slug))?;
         let pid = child.id();
 
         // Store child process so it doesn't get killed when Child is dropped
-        self.children
-            .lock()
-            .await
-            .insert(slug.to_string(), child);
+        self.children.lock().await.insert(slug.to_string(), child);
 
         let state = AgentState {
             slug: slug.to_string(),
